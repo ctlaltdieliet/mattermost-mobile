@@ -2,36 +2,41 @@
 // See LICENSE.txt for license information.
 
 import React, {useCallback} from 'react';
-import {useIntl} from 'react-intl';
-import {type StyleProp, Text, TouchableOpacity, View, type ViewStyle} from 'react-native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useIntl, type MessageDescriptor} from 'react-intl';
+import {Platform, type StyleProp, Text, type TextStyle, TouchableOpacity, View, type ViewStyle} from 'react-native';
 
 import FormattedText from '@components/formatted_text';
 import {useTheme} from '@context/theme';
 import {useIsTablet} from '@hooks/device';
+import {usePreventDoubleTap} from '@hooks/utils';
+import {BOTTOM_SHEET_ANDROID_OFFSET} from '@screens/bottom_sheet';
 import {TITLE_HEIGHT} from '@screens/bottom_sheet/content';
 import {bottomSheet} from '@screens/navigation';
 import {bottomSheetSnapPoint} from '@utils/helpers';
-import {preventDoubleTap} from '@utils/tap';
 import {changeOpacity, makeStyleSheetFromTheme} from '@utils/theme';
 import {typography} from '@utils/typography';
 
 import UserAvatar from './user_avatar';
 import UsersList from './users_list';
 
-import type {BottomSheetProps} from '@gorhom/bottom-sheet';
 import type UserModel from '@typings/database/models/servers/user';
+import type {AvailableScreens} from '@typings/screens/navigation';
 
 const OVERFLOW_DISPLAY_LIMIT = 99;
 const USER_ROW_HEIGHT = 40;
 
 type Props = {
-    channelId: string;
-    location: string;
+    channelId?: string;
+    location: AvailableScreens;
     users: UserModel[];
     breakAt?: number;
     style?: StyleProp<ViewStyle>;
     noBorder?: boolean;
+    avatarStyle?: StyleProp<ViewStyle>;
+    overflowContainerStyle?: StyleProp<ViewStyle>;
+    overflowItemStyle?: StyleProp<ViewStyle>;
+    overflowTextStyle?: StyleProp<TextStyle>;
+    bottomSheetTitle: MessageDescriptor;
 }
 
 const getStyleSheet = makeStyleSheetFromTheme((theme: Theme) => {
@@ -42,7 +47,7 @@ const getStyleSheet = makeStyleSheetFromTheme((theme: Theme) => {
         container: {
             flexDirection: 'row',
         },
-        firstAvatar: {
+        avatarCommon: {
             justifyContent: 'center',
             alignItems: 'center',
             width: size,
@@ -56,35 +61,16 @@ const getStyleSheet = makeStyleSheetFromTheme((theme: Theme) => {
             borderWidth: 0,
         },
         notFirstAvatars: {
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: size,
-            height: size,
-            borderWidth: (size / 2) + 1,
-            borderColor: theme.centerChannelBg,
-            backgroundColor: theme.centerChannelBg,
-            borderRadius: size / 2,
             marginLeft: imgOverlap,
         },
         overflowContainer: {
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: size,
-            height: size,
             borderRadius: size / 2,
             borderWidth: 1,
-            borderColor: theme.centerChannelBg,
-            backgroundColor: theme.centerChannelBg,
             marginLeft: imgOverlap,
         },
         overflowItem: {
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: size,
-            height: size,
             borderRadius: size / 2,
             borderWidth: 1,
-            borderColor: theme.centerChannelBg,
             backgroundColor: changeOpacity(theme.centerChannelColor, 0.08),
         },
         overflowText: {
@@ -110,20 +96,24 @@ const UserAvatarsStack = ({
     style: baseContainerStyle,
     users,
     noBorder = false,
+    avatarStyle,
+    overflowContainerStyle,
+    overflowItemStyle,
+    overflowTextStyle,
+    bottomSheetTitle,
 }: Props) => {
     const theme = useTheme();
+    const style = getStyleSheet(theme);
     const intl = useIntl();
     const isTablet = useIsTablet();
-    const {bottom} = useSafeAreaInsets();
 
-    const showParticipantsList = useCallback(preventDoubleTap(() => {
+    const showParticipantsList = usePreventDoubleTap(useCallback(() => {
         const renderContent = () => (
             <>
                 {!isTablet && (
                     <View style={style.listHeader}>
                         <FormattedText
-                            id='mobile.participants.header'
-                            defaultMessage={'Thread Participants'}
+                            {...bottomSheetTitle}
                             style={style.listHeaderText}
                         />
                     </View>
@@ -136,7 +126,12 @@ const UserAvatarsStack = ({
             </>
         );
 
-        const snapPoints: BottomSheetProps['snapPoints'] = [1, bottomSheetSnapPoint(Math.min(users.length, 5), USER_ROW_HEIGHT, bottom) + TITLE_HEIGHT];
+        let height = bottomSheetSnapPoint(Math.min(users.length, 5), USER_ROW_HEIGHT) + TITLE_HEIGHT;
+        if (Platform.OS === 'android') {
+            height += BOTTOM_SHEET_ANDROID_OFFSET;
+        }
+
+        const snapPoints: Array<string | number> = [1, height];
         if (users.length > 5) {
             snapPoints.push('80%');
         }
@@ -146,15 +141,13 @@ const UserAvatarsStack = ({
             renderContent,
             initialSnapIndex: 1,
             snapPoints,
-            title: intl.formatMessage({id: 'mobile.participants.header', defaultMessage: 'Thread Participants'}),
+            title: intl.formatMessage(bottomSheetTitle),
             theme,
         });
-    }), [isTablet, theme, users, channelId, location, bottom]);
+    }, [users, intl, bottomSheetTitle, theme, isTablet, style.listHeader, style.listHeaderText, channelId, location]));
 
     const displayUsers = users.slice(0, breakAt);
     const overflowUsersCount = Math.min(users.length - displayUsers.length, OVERFLOW_DISPLAY_LIMIT);
-
-    const style = getStyleSheet(theme);
 
     return (
         <TouchableOpacity
@@ -165,14 +158,14 @@ const UserAvatarsStack = ({
                 {displayUsers.map((user, index) => (
                     <UserAvatar
                         key={user.id}
-                        style={index === 0 ? [style.firstAvatar, noBorder && style.noBorder] : [style.notFirstAvatars, noBorder && style.noBorder]}
+                        style={index === 0 ? [style.avatarCommon, noBorder && style.noBorder, avatarStyle] : [style.avatarCommon, style.notFirstAvatars, noBorder && style.noBorder, avatarStyle]}
                         user={user}
                     />
                 ))}
                 {Boolean(overflowUsersCount) && (
-                    <View style={[style.overflowContainer, noBorder && style.noBorder]}>
-                        <View style={[style.overflowItem, noBorder && style.noBorder]}>
-                            <Text style={style.overflowText}>
+                    <View style={[style.avatarCommon, style.overflowContainer, noBorder && style.noBorder, overflowContainerStyle]}>
+                        <View style={[style.avatarCommon, style.overflowItem, noBorder && style.noBorder, overflowItemStyle]}>
+                            <Text style={[style.overflowText, overflowTextStyle]}>
                                 {'+' + overflowUsersCount.toString()}
                             </Text>
                         </View>

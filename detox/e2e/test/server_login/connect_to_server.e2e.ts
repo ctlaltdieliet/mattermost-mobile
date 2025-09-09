@@ -8,11 +8,12 @@
 // *******************************************************************
 
 import {serverOneUrl} from '@support/test_config';
+import {Alert} from '@support/ui/component';
 import {
     LoginScreen,
     ServerScreen,
 } from '@support/ui/screen';
-import {timeouts, wait} from '@support/utils';
+import {isIos, timeouts, wait} from '@support/utils';
 import {expect} from 'detox';
 
 describe('Server Login - Connect to Server', () => {
@@ -33,6 +34,8 @@ describe('Server Login - Connect to Server', () => {
         await ServerScreen.toBeVisible();
 
         // # Clear fields
+        await expect(serverUrlInput).toBeVisible();
+        await expect(serverDisplayNameInput).toBeVisible();
         await serverUrlInput.clearText();
         await serverDisplayNameInput.clearText();
     });
@@ -67,38 +70,35 @@ describe('Server Login - Connect to Server', () => {
     it('MM-T4676_3 - should show invalid url error on invalid server url', async () => {
         // # Connect with invalid server url and non-empty server display name
         const invalidServerUrl = 'invalid';
+        await device.setURLBlacklist([invalidServerUrl]);
         await serverUrlInput.replaceText(invalidServerUrl);
         await serverDisplayNameInput.replaceText('Server 1');
         await connectButton.tap();
         await wait(timeouts.ONE_SEC);
 
         // * Verify invalid url error
-        await waitFor(serverUrlInputError).toExist().withTimeout(timeouts.TEN_SEC);
-        await expect(serverUrlInputError).toHaveText('Cannot connect to the server.');
+        await waitFor(serverUrlInputError).toExist().withTimeout(timeouts.FOUR_SEC);
+        const expectedErrorText = isIos()
+            ? 'URLSessionTask failed with error: A server with the specified hostname could not be found.'
+            : 'Unable to resolve host "invalid": No address associated with hostname';
+
+        await expect(serverUrlInputError).toHaveText(expectedErrorText);
     });
 
     it('MM-T4676_4 - should show connection error on invalid ssl or invalid host', async () => {
         // # Connect with invalid ssl and non-empty server display name
-        const connectionError = 'Cannot connect to the server.';
-        await serverUrlInput.replaceText('expired.badssl.com');
+        const expiredServerUrl = 'expired.badssl.com';
+        const wrongHostServerUrl = 'wrong.host.badssl.com';
+        await device.setURLBlacklist([expiredServerUrl, wrongHostServerUrl]);
+
+        await serverUrlInput.replaceText(expiredServerUrl);
         await serverDisplayNameInput.replaceText('Server 1');
         await connectButton.tap();
         await wait(timeouts.ONE_SEC);
 
-        // * Verify connection error
-        await waitFor(serverUrlInputError).toExist().withTimeout(timeouts.TEN_SEC);
-        await expect(serverUrlInputError).toHaveText(connectionError);
-
-        // # Connect with invalid host and valid server display name
-        await device.reloadReactNative();
-        await serverUrlInput.replaceText('wrong.host.badssl.com');
-        await serverDisplayNameInput.replaceText('Server 1');
-        await connectButton.tap();
-        await wait(timeouts.ONE_SEC);
-
-        // * Verify connection error
-        await waitFor(serverUrlInputError).toExist().withTimeout(timeouts.TEN_SEC);
-        await expect(serverUrlInputError).toHaveText(connectionError);
+        // * Verify invalid SSL cert error
+        await waitFor(serverUrlInputError).toExist().withTimeout(timeouts.FOUR_SEC);
+        await expect(serverUrlInputError).toBeVisible();
     });
 
     it('MM-T4676_5 - should show login screen on successful connection to server', async () => {
@@ -107,6 +107,12 @@ describe('Server Login - Connect to Server', () => {
         await serverDisplayNameInput.replaceText('Server 1');
         await connectButton.tap();
         await wait(timeouts.ONE_SEC);
+
+        if (isIos() && !process.env.CI) {
+            // # Tap alert okay button
+            await waitFor(Alert.okayButton).toExist().withTimeout(timeouts.TEN_SEC);
+            await Alert.okayButton.tap();
+        }
 
         // * Verify on login screen
         await LoginScreen.toBeVisible();

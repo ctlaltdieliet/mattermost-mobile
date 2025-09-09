@@ -18,10 +18,13 @@ class AboutScreen {
         appVersionValue: 'about.app_version.value',
         serverVersionTitle: 'about.server_version.title',
         serverVersionValue: 'about.server_version.value',
+        licenseLoadMetricTitle: 'about.license_load_metric.title',
+        licenseLoadMetricValue: 'about.license_load_metric.value',
         databaseTitle: 'about.database.title',
         databaseValue: 'about.database.value',
         databaseSchemaVersionTitle: 'about.database_schema_version.title',
         databaseSchemaVersionValue: 'about.database_schema_version.value',
+        copInfoButton: 'about.copy_info',
         licensee: 'about.licensee',
         learnMoreText: 'about.learn_more.text',
         learnMoreUrl: 'about.learn_more.url',
@@ -49,8 +52,11 @@ class AboutScreen {
     appVersionValue = element(by.id(this.testID.appVersionValue));
     serverVersionTitle = element(by.id(this.testID.serverVersionTitle));
     serverVersionValue = element(by.id(this.testID.serverVersionValue));
+    licenseLoadMetricTitle = element(by.id(this.testID.licenseLoadMetricTitle));
+    licenseLoadMetricValue = element(by.id(this.testID.licenseLoadMetricValue));
     databaseTitle = element(by.id(this.testID.databaseTitle));
     databaseValue = element(by.id(this.testID.databaseValue));
+    copyInfoButton = element(by.id(this.testID.copInfoButton));
     databaseSchemaVersionTitle = element(by.id(this.testID.databaseSchemaVersionTitle));
     databaseSchemaVersionValue = element(by.id(this.testID.databaseSchemaVersionValue));
     licensee = element(by.id(this.testID.licensee));

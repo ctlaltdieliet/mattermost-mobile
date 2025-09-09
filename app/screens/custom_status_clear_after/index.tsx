@@ -1,8 +1,7 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 import React from 'react';
 import {injectIntl, type IntlShape} from 'react-intl';
 import {BackHandler, type NativeEventSubscription, SafeAreaView, View} from 'react-native';
@@ -15,6 +14,7 @@ import {
 } from 'react-native-navigation';
 
 import {CustomStatusDurationEnum} from '@constants/custom_status';
+import SecurityManager from '@managers/security_manager';
 import {observeCurrentUser} from '@queries/servers/user';
 import {dismissModal, popTopScreen} from '@screens/navigation';
 import NavigationStore from '@store/navigation_store';
@@ -181,13 +181,14 @@ class ClearAfterModal extends NavigationComponent<Props, State> {
     };
 
     render() {
-        const {currentUser, theme} = this.props;
+        const {componentId, currentUser, theme} = this.props;
         const style = getStyleSheet(theme);
         const {duration, expiresAt, showExpiryTime} = this.state;
         return (
             <SafeAreaView
                 style={style.container}
                 testID='custom_status_clear_after.screen'
+                nativeID={SecurityManager.getShieldScreenId(componentId)}
             >
                 <KeyboardAwareScrollView bounces={false}>
                     <View style={style.scrollView}>

@@ -20,15 +20,14 @@ type Props = {
 const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
-    },
-    action: {
-        marginLeft: 24,
+        alignItems: 'center',
+        gap: 8,
     },
 });
 
 const Actions = ({
-    canDownloadFiles, disabled, enablePublicLinks, fileId,
-    onCopyPublicLink, onDownload, onShare,
+    canDownloadFiles, disabled, enablePublicLinks, fileId, onCopyPublicLink,
+    onDownload, onShare,
 }: Props) => {
     const managedConfig = useManagedConfig<ManagedConfig>();
     const canCopyPublicLink = !fileId.startsWith('uid') && enablePublicLinks && managedConfig.copyAndPasteProtection !== 'true';
@@ -47,13 +46,11 @@ const Actions = ({
                     disabled={disabled}
                     iconName='download-outline'
                     onPress={onDownload}
-                    style={styles.action}
                 />
                 <Action
                     disabled={disabled}
                     iconName='export-variant'
                     onPress={onShare}
-                    style={styles.action}
                 />
             </>
             }

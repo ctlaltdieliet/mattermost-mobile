@@ -1,11 +1,11 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 
 import {observeChannel} from '@queries/servers/channel';
-import {observeCanDownloadFiles, observeConfigBooleanValue} from '@queries/servers/system';
+import {observeCanDownloadFiles, observeEnableSecureFilePreview} from '@queries/servers/security';
+import {observeConfigBooleanValue} from '@queries/servers/system';
 
 import ChannelFiles from './channel_files';
 
@@ -20,6 +20,7 @@ const enhance = withObservables(['channelId'], ({channelId, database}: Props) =>
     return {
         channel,
         canDownloadFiles: observeCanDownloadFiles(database),
+        enableSecureFilePreview: observeEnableSecureFilePreview(database),
         publicLinkEnabled: observeConfigBooleanValue(database, 'EnablePublicLink'),
     };
 });

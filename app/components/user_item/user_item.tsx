@@ -32,6 +32,7 @@ type Props = {
     rightDecorator?: React.ReactNode;
     onUserPress?: (user: UserProfile | UserModel) => void;
     onUserLongPress?: (user: UserProfile | UserModel) => void;
+    onLayout?: () => void;
     disabled?: boolean;
     viewRef?: React.LegacyRef<View>;
     padding?: number;
@@ -75,15 +76,11 @@ const nonThemedStyles = StyleSheet.create({
     rowInfoContainer: {
         flex: 1,
         flexDirection: 'row',
-    },
-    icon: {
-        marginLeft: 4,
+        alignItems: 'center',
+        gap: 4,
     },
     profile: {
         marginRight: 12,
-    },
-    tag: {
-        marginLeft: 6,
     },
     flex: {
         flex: 1,
@@ -102,6 +99,7 @@ const UserItem = ({
     locale,
     teammateNameDisplay,
     rightDecorator,
+    onLayout,
     onUserPress,
     onUserLongPress,
     disabled = false,
@@ -159,6 +157,7 @@ const UserItem = ({
             onPress={onPress}
             onLongPress={onLongPress}
             disabled={!(onUserPress || onUserLongPress)}
+            onLayout={onLayout}
         >
             <View
                 ref={viewRef}
@@ -198,29 +197,19 @@ const UserItem = ({
                             )}
                         </Text>
                         {showBadges && bot && (
-                            <BotTag
-                                testID={`${userItemTestId}.bot.tag`}
-                                style={nonThemedStyles.tag}
-                            />
+                            <BotTag testID={`${userItemTestId}.bot.tag`}/>
                         )}
                         {showBadges && guest && !hideGuestTags && (
-                            <GuestTag
-                                testID={`${userItemTestId}.guest.tag`}
-                                style={nonThemedStyles.tag}
-                            />
+                            <GuestTag testID={`${userItemTestId}.guest.tag`}/>
                         )}
                         {Boolean(isCustomStatusEnabled && !bot && customStatus?.emoji && !customStatusExpired) && (
-                            <CustomStatusEmoji
-                                customStatus={customStatus!}
-                                style={nonThemedStyles.icon}
-                            />
+                            <CustomStatusEmoji customStatus={customStatus!}/>
                         )}
                         {shared && (
                             <CompassIcon
                                 name={'circle-multiple-outline'}
                                 size={16}
                                 color={theme.centerChannelColor}
-                                style={nonThemedStyles.icon}
                             />
                         )}
                         <View style={nonThemedStyles.flex}/>

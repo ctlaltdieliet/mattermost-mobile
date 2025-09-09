@@ -9,6 +9,7 @@ import {useServerUrl} from '@context/server';
 import {useTheme} from '@context/theme';
 import useDidUpdate from '@hooks/did_update';
 import EphemeralStore from '@store/ephemeral_store';
+import {isDefaultChannel} from '@utils/channel';
 
 import DirectChannel from './direct_channel';
 import PublicOrPrivateChannel from './public_or_private_channel';
@@ -29,11 +30,6 @@ const styles = StyleSheet.create({
         marginVertical: 12,
         paddingTop: PADDING_TOP,
         overflow: 'hidden',
-        ...Platform.select({
-            android: {
-                scaleY: -1,
-            },
-        }),
     },
 });
 
@@ -47,7 +43,7 @@ const Intro = ({channel, roles}: Props) => {
             return null;
         }
 
-        if (channel.type === General.OPEN_CHANNEL && channel.name === General.DEFAULT_CHANNEL) {
+        if (channel.type === General.OPEN_CHANNEL && isDefaultChannel(channel)) {
             return (
                 <TownSquare
                     channelId={channel.id}

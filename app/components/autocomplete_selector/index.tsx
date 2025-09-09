@@ -1,8 +1,7 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 import React, {useCallback, useEffect, useState} from 'react';
 import {type IntlShape, useIntl} from 'react-intl';
 import {Text, View} from 'react-native';
@@ -15,14 +14,16 @@ import {Screens, View as ViewConstants} from '@constants';
 import {useServerUrl} from '@context/server';
 import {useTheme} from '@context/theme';
 import DatabaseManager from '@database/manager';
+import {usePreventDoubleTap} from '@hooks/utils';
 import {getChannelById} from '@queries/servers/channel';
 import {getUserById, observeTeammateNameDisplay} from '@queries/servers/user';
 import {goToScreen} from '@screens/navigation';
-import {preventDoubleTap} from '@utils/tap';
 import {changeOpacity, makeStyleSheetFromTheme} from '@utils/theme';
+import {secureGetFromRecord} from '@utils/types';
 import {displayUsername} from '@utils/user';
 
 import type {WithDatabaseArgs} from '@typings/database/database';
+import type {AvailableScreens} from '@typings/screens/navigation';
 
 type Selection = DialogOption | Channel | UserProfile | DialogOption[] | Channel[] | UserProfile[];
 
@@ -43,6 +44,7 @@ type AutoCompleteSelectorProps = {
     teammateNameDisplay: string;
     isMultiselect?: boolean;
     testID: string;
+    location: AvailableScreens;
 }
 
 const getStyleSheet = makeStyleSheetFromTheme((theme: Theme) => {
@@ -94,7 +96,7 @@ async function getItemName(serverUrl: string, selected: string, teammateNameDisp
         return '';
     }
 
-    const database = DatabaseManager.serverDatabases[serverUrl]?.database;
+    const database = secureGetFromRecord(DatabaseManager.serverDatabases, serverUrl)?.database;
 
     switch (dataSource) {
         case ViewConstants.DATA_SOURCE_USERS: {
@@ -131,8 +133,22 @@ function getTextAndValueFromSelectedItem(item: Selection, teammateNameDisplay: s
 }
 
 function AutoCompleteSelector({
-    dataSource, disabled = false, errorText, getDynamicOptions, helpText, label, onSelected, optional = false,
-    options, placeholder, roundedBorders = true, selected, teammateNameDisplay, isMultiselect = false, testID,
+    dataSource,
+    disabled = false,
+    errorText,
+    getDynamicOptions,
+    helpText,
+    label,
+    onSelected,
+    optional = false,
+    options,
+    placeholder,
+    roundedBorders = true,
+    selected,
+    teammateNameDisplay,
+    isMultiselect = false,
+    testID,
+    location,
 }: AutoCompleteSelectorProps) {
     const intl = useIntl();
     const theme = useTheme();
@@ -140,11 +156,6 @@ function AutoCompleteSelector({
     const style = getStyleSheet(theme);
     const title = placeholder || intl.formatMessage({id: 'mobile.action_menu.select', defaultMessage: 'Select an option'});
     const serverUrl = useServerUrl();
-
-    const goToSelectorScreen = useCallback(preventDoubleTap(() => {
-        const screen = Screens.INTEGRATION_SELECTOR;
-        goToScreen(screen, title, {dataSource, handleSelect, options, getDynamicOptions, selected, isMultiselect});
-    }), [dataSource, options, getDynamicOptions]);
 
     const handleSelect = useCallback((newSelection?: Selection) => {
         if (!newSelection) {
@@ -166,7 +177,12 @@ function AutoCompleteSelector({
         if (onSelected) {
             onSelected(selectedOptions);
         }
-    }, [teammateNameDisplay, intl, dataSource]);
+    }, [teammateNameDisplay, intl, dataSource, onSelected]);
+
+    const goToSelectorScreen = usePreventDoubleTap(useCallback((() => {
+        const screen = Screens.INTEGRATION_SELECTOR;
+        goToScreen(screen, title, {dataSource, handleSelect, options, getDynamicOptions, selected, isMultiselect});
+    }), [title, dataSource, handleSelect, options, getDynamicOptions, selected, isMultiselect]));
 
     // Handle the text for the default value.
     useEffect(() => {
@@ -186,7 +202,7 @@ function AutoCompleteSelector({
         Promise.all(namePromises).then((names) => {
             setItemText(names.join(', '));
         });
-    }, []);
+    }, [dataSource, teammateNameDisplay, intl, options, selected, serverUrl]);
 
     return (
         <View style={style.container}>
@@ -221,6 +237,7 @@ function AutoCompleteSelector({
                 disabled={disabled}
                 helpText={helpText}
                 errorText={errorText}
+                location={location}
             />
         </View>
     );

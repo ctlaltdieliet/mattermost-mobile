@@ -1,8 +1,7 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 import React, {useCallback, useMemo} from 'react';
 import {of as of$} from 'rxjs';
 import {switchMap, distinctUntilChanged} from 'rxjs/operators';
@@ -10,11 +9,11 @@ import {switchMap, distinctUntilChanged} from 'rxjs/operators';
 import {postEphemeralCallResponseForPost} from '@actions/remote/apps';
 import OptionItem from '@components/option_item';
 import {useAppBinding} from '@hooks/apps';
+import {usePreventDoubleTap} from '@hooks/utils';
 import {observeChannel} from '@queries/servers/channel';
 import {observeCurrentTeamId} from '@queries/servers/system';
 import {dismissBottomSheet} from '@screens/navigation';
 import {isSystemMessage} from '@utils/post';
-import {preventDoubleTap} from '@utils/tap';
 
 import type {WithDatabaseArgs} from '@typings/database/database';
 import type PostModel from '@typings/database/models/servers/post';
@@ -71,13 +70,13 @@ const AppBindingsPostOptions = ({bottomSheetId, serverUrl, post, teamId, binding
 };
 
 const BindingOptionItem = ({binding, onPress}: {binding: AppBinding; onPress: (binding: AppBinding) => void}) => {
-    const handlePress = useCallback(preventDoubleTap(() => {
+    const handlePress = usePreventDoubleTap(useCallback(() => {
         onPress(binding);
-    }), [binding, onPress]);
+    }, [binding, onPress]));
 
     return (
         <OptionItem
-            label={binding.label}
+            label={binding.label || ''}
             icon={binding.icon}
             action={handlePress}
             type='default'

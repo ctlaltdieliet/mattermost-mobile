@@ -4,40 +4,54 @@
 /* eslint-disable max-lines */
 
 import merge from 'deepmerge';
-import {Appearance, DeviceEventEmitter, NativeModules, StatusBar, Platform, Alert} from 'react-native';
-import {type ComponentWillAppearEvent, type ImageResource, type LayoutOrientation, Navigation, type Options, OptionsModalPresentationStyle, type OptionsTopBarButton, type ScreenPoppedEvent} from 'react-native-navigation';
+import {Appearance, DeviceEventEmitter, StatusBar, Platform, Alert, type EmitterSubscription, Keyboard} from 'react-native';
+import {type ComponentWillAppearEvent, type ImageResource, type LayoutOrientation, Navigation, type Options, OptionsModalPresentationStyle, type OptionsTopBarButton, type ScreenPoppedEvent, type EventSubscription} from 'react-native-navigation';
 import tinyColor from 'tinycolor2';
 
 import CompassIcon from '@components/compass_icon';
-import {Device, Events, Screens, Launch} from '@constants';
+import {Events, Screens, Launch} from '@constants';
 import {NOT_READY} from '@constants/screens';
 import {getDefaultThemeByAppearance} from '@context/theme';
 import EphemeralStore from '@store/ephemeral_store';
 import NavigationStore from '@store/navigation_store';
+import {isTablet} from '@utils/helpers';
 import {logError} from '@utils/log';
 import {appearanceControlledScreens, mergeNavigationOptions} from '@utils/navigation';
 import {changeOpacity, setNavigatorStyles} from '@utils/theme';
 
 import type {BottomSheetFooterProps} from '@gorhom/bottom-sheet';
+import type {default as UserProfileScreen} from '@screens/user_profile';
 import type {LaunchProps} from '@typings/launch';
 import type {AvailableScreens, NavButtons} from '@typings/screens/navigation';
-
-const {SplitView} = NativeModules;
-const {isRunningInSplitView} = SplitView;
+import type {ComponentProps} from 'react';
+import type {IntlShape} from 'react-intl';
 
 const alpha = {
     from: 0,
     to: 1,
     duration: 150,
 };
+let subscriptions: Array<EmitterSubscription | EventSubscription> | undefined;
 
 export const allOrientations: LayoutOrientation[] = ['sensor', 'sensorLandscape', 'sensorPortrait', 'landscape', 'portrait'];
 export const portraitOrientation: LayoutOrientation[] = ['portrait'];
 
 export function registerNavigationListeners() {
-    Navigation.events().registerScreenPoppedListener(onPoppedListener);
-    Navigation.events().registerCommandListener(onCommandListener);
-    Navigation.events().registerComponentWillAppearListener(onScreenWillAppear);
+    subscriptions?.forEach((v) => v.remove());
+    subscriptions = [
+        Navigation.events().registerScreenPoppedListener(onPoppedListener),
+        Navigation.events().registerCommandListener(onCommandListener),
+        Navigation.events().registerComponentWillAppearListener(onScreenWillAppear),
+
+        /**
+         * For the time being and until we add the emoji picker in the keyboard area
+         * will keep Android as adjustResize cause useAnimatedKeyboard from reanimated
+         * is reporting the wrong values when the keyboard was opened but we switch
+         * to a different channel or thread.
+         */
+        // Navigation.events().registerComponentDidAppearListener(onScreenDidAppear),
+        // Navigation.events().registerComponentDidDisappearListener(onScreenDidDisappear),
+    ];
 }
 
 function onCommandListener(name: string, params: any) {
@@ -165,7 +179,7 @@ export const bottomSheetModalOptions = (theme: Theme, closeButtonId?: string): O
             default: OptionsModalPresentationStyle.overCurrentContext,
         }),
         statusBar: {
-            backgroundColor: null,
+            backgroundColor: theme.sidebarBg,
             drawBehind: true,
             translucent: true,
         },
@@ -189,7 +203,7 @@ Navigation.setDefaultOptions({
         },
     },
     layout: {
-        orientation: Device.IS_TABLET ? allOrientations : portraitOrientation,
+        orientation: isTablet() ? allOrientations : portraitOrientation,
     },
     topBar: {
         title: {
@@ -265,7 +279,7 @@ export function resetToHome(passProps: LaunchProps = {launchType: Launch.Normal}
     const isDark = tinyColor(theme.sidebarBg).isDark();
     StatusBar.setBarStyle(isDark ? 'light-content' : 'dark-content');
 
-    if (passProps.launchType === Launch.AddServer || passProps.launchType === Launch.AddServerFromDeepLink) {
+    if (!passProps.coldStart && (passProps.launchType === Launch.AddServer || passProps.launchType === Launch.AddServerFromDeepLink)) {
         dismissModal({componentId: Screens.SERVER});
         dismissModal({componentId: Screens.LOGIN});
         dismissModal({componentId: Screens.SSO});
@@ -466,6 +480,7 @@ export function goToScreen(name: AvailableScreens, title: string, passProps = {}
         },
         statusBar: {
             style: isDark ? 'light' : 'dark',
+            backgroundColor: theme.sidebarBg,
         },
         topBar: {
             animate: true,
@@ -487,6 +502,11 @@ export function goToScreen(name: AvailableScreens, title: string, passProps = {}
 
     DeviceEventEmitter.emit(Events.TAB_BAR_VISIBLE, false);
 
+    if (NavigationStore.getScreensInStack().includes(name)) {
+        Navigation.updateProps(name, passProps);
+        return Navigation.popTo(name, merge(defaultOptions, options));
+    }
+
     return Navigation.push(componentId, {
         component: {
             id: name,
@@ -505,6 +525,15 @@ export async function popTopScreen(screenId?: AvailableScreens) {
             const componentId = NavigationStore.getVisibleScreen();
             await Navigation.pop(componentId);
         }
+    } catch (error) {
+        // RNN returns a promise rejection if there are no screens
+        // atop the root screen to pop. We'll do nothing in this case.
+    }
+}
+
+export async function popTo(screenId: AvailableScreens) {
+    try {
+        await Navigation.popTo(screenId);
     } catch (error) {
         // RNN returns a promise rejection if there are no screens
         // atop the root screen to pop. We'll do nothing in this case.
@@ -564,7 +593,7 @@ export async function dismissAllModalsAndPopToScreen(screenId: AvailableScreens,
 }
 
 export function showModal(name: AvailableScreens, title: string, passProps = {}, options: Options = {}) {
-    if (!isScreenRegistered(name)) {
+    if (!isScreenRegistered(name) || NavigationStore.getVisibleModal() === name) {
         return;
     }
 
@@ -577,6 +606,7 @@ export function showModal(name: AvailableScreens, title: string, passProps = {},
         },
         statusBar: {
             visible: true,
+            backgroundColor: theme.sidebarBg,
         },
         topBar: {
             animate: true,
@@ -727,7 +757,7 @@ export function setButtons(componentId: AvailableScreens, buttons: NavButtons = 
     mergeNavigationOptions(componentId, options);
 }
 
-export function showOverlay(name: AvailableScreens, passProps = {}, options: Options = {}) {
+export function showOverlay(name: AvailableScreens, passProps = {}, options: Options = {}, id?: string) {
     if (!isScreenRegistered(name)) {
         return;
     }
@@ -744,6 +774,7 @@ export function showOverlay(name: AvailableScreens, passProps = {}, options: Opt
 
     Navigation.showOverlay({
         component: {
+            id,
             name,
             passProps,
             options: merge(defaultOptions, options),
@@ -751,7 +782,7 @@ export function showOverlay(name: AvailableScreens, passProps = {}, options: Opt
     });
 }
 
-export async function dismissOverlay(componentId: AvailableScreens) {
+export async function dismissOverlay(componentId: string) {
     try {
         await Navigation.dismissOverlay(componentId);
     } catch (error) {
@@ -772,23 +803,22 @@ type BottomSheetArgs = {
     closeButtonId: string;
     initialSnapIndex?: number;
     footerComponent?: React.FC<BottomSheetFooterProps>;
-    renderContent: () => JSX.Element;
+    renderContent: () => React.ReactNode;
     snapPoints: Array<number | string>;
     theme: Theme;
     title: string;
+    scrollable?: boolean;
 }
 
-export async function bottomSheet({title, renderContent, footerComponent, snapPoints, initialSnapIndex = 1, theme, closeButtonId}: BottomSheetArgs) {
-    const {isSplitView} = await isRunningInSplitView();
-    const isTablet = Device.IS_TABLET && !isSplitView;
-
-    if (isTablet) {
+export function bottomSheet({title, renderContent, footerComponent, snapPoints, initialSnapIndex = 1, theme, closeButtonId, scrollable = false}: BottomSheetArgs) {
+    if (isTablet()) {
         showModal(Screens.BOTTOM_SHEET, title, {
             closeButtonId,
             initialSnapIndex,
             renderContent,
             footerComponent,
             snapPoints,
+            scrollable,
         }, bottomSheetModalOptions(theme, closeButtonId));
     } else {
         showModalOverCurrentContext(Screens.BOTTOM_SHEET, {
@@ -796,6 +826,7 @@ export async function bottomSheet({title, renderContent, footerComponent, snapPo
             renderContent,
             footerComponent,
             snapPoints,
+            scrollable,
         }, bottomSheetModalOptions(theme));
     }
 }
@@ -813,11 +844,8 @@ type AsBottomSheetArgs = {
     title: string;
 }
 
-export async function openAsBottomSheet({closeButtonId, screen, theme, title, props}: AsBottomSheetArgs) {
-    const {isSplitView} = await isRunningInSplitView();
-    const isTablet = Device.IS_TABLET && !isSplitView;
-
-    if (isTablet) {
+export function openAsBottomSheet({closeButtonId, screen, theme, title, props}: AsBottomSheetArgs) {
+    if (isTablet()) {
         showModal(screen, title, {
             closeButtonId,
             ...props,
@@ -866,4 +894,21 @@ export async function findChannels(title: string, theme: Theme) {
         {closeButtonId},
         options,
     );
+}
+
+export async function openUserProfileModal(
+    intl: IntlShape,
+    theme: Theme,
+    props: Omit<ComponentProps<typeof UserProfileScreen>, 'closeButtonId'>,
+    screenToDismiss?: AvailableScreens,
+) {
+    if (screenToDismiss) {
+        await dismissBottomSheet(screenToDismiss);
+    }
+    const screen = Screens.USER_PROFILE;
+    const title = intl.formatMessage({id: 'mobile.routes.user_profile', defaultMessage: 'Profile'});
+    const closeButtonId = 'close-user-profile';
+
+    Keyboard.dismiss();
+    openAsBottomSheet({screen, title, theme, closeButtonId, props: {...props}});
 }

@@ -4,7 +4,7 @@
 import {debounce, type DebouncedFunc} from 'lodash';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useIntl} from 'react-intl';
-import {Alert, FlatList, type ListRenderItemInfo, StyleSheet, View} from 'react-native';
+import {Alert, FlatList, type ListRenderItemInfo, Platform, StyleSheet, View} from 'react-native';
 import Animated, {FadeInDown, FadeOutUp} from 'react-native-reanimated';
 
 import {switchToGlobalThreads} from '@actions/local/thread';
@@ -219,6 +219,7 @@ const FilteredList = ({
                 />
             );
         }
+
         if ('teamId' in item) {
             return (
                 <ChannelItem
@@ -230,7 +231,9 @@ const FilteredList = ({
                     testID='find_channels.filtered_list.channel_item'
                 />
             );
-        } else if ('username' in item) {
+        }
+
+        if ('username' in item) {
             return (
                 <UserItem
                     onUserPress={onOpenDirectMessage}
@@ -244,6 +247,7 @@ const FilteredList = ({
         return (
             <ChannelItem
                 channel={item}
+                isOnCenterBg={true}
                 onPress={onJoinChannel}
                 showTeamName={showTeamName}
                 shouldHighlightState={true}
@@ -332,7 +336,7 @@ const FilteredList = ({
     return (
         <Animated.View
             entering={FadeInDown.duration(100)}
-            exiting={FadeOutUp.duration(100)}
+            exiting={Platform.select({ios: FadeOutUp.duration(100)}) /* https://mattermost.atlassian.net/browse/MM-63814?focusedCommentId=178584 */}
             style={style.flex}
         >
             <FlatList

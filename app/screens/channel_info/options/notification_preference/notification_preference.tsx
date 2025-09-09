@@ -1,16 +1,16 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React from 'react';
-import {useIntl} from 'react-intl';
+import React, {useCallback} from 'react';
+import {defineMessages, useIntl} from 'react-intl';
 import {Platform} from 'react-native';
 
 import OptionItem from '@components/option_item';
 import {NotificationLevel, Screens} from '@constants';
 import {useTheme} from '@context/theme';
-import {t} from '@i18n';
+import {usePreventDoubleTap} from '@hooks/utils';
 import {goToScreen} from '@screens/navigation';
-import {preventDoubleTap} from '@utils/tap';
+import {isTypeDMorGM} from '@utils/channel';
 import {changeOpacity} from '@utils/theme';
 
 import type {Options} from 'react-native-navigation';
@@ -20,42 +20,65 @@ type Props = {
     displayName: string;
     notifyLevel: NotificationLevel;
     userNotifyLevel: NotificationLevel;
+    channelType: ChannelType;
+    hasGMasDMFeature: boolean;
 }
 
+const messages = defineMessages({
+    notificationAll: {
+        id: 'channel_info.notification.all',
+        defaultMessage: 'All',
+    },
+    notificationMention: {
+        id: 'channel_info.notification.mention',
+        defaultMessage: 'Mentions',
+    },
+    notificationNone: {
+        id: 'channel_info.notification.none',
+        defaultMessage: 'Never',
+    },
+    notificationDefault: {
+        id: 'channel_info.notification.default',
+        defaultMessage: 'Default',
+    },
+});
+
 const notificationLevel = (notifyLevel: NotificationLevel) => {
-    let id = '';
-    let defaultMessage = '';
+    let message;
     switch (notifyLevel) {
         case NotificationLevel.ALL: {
-            id = t('channel_info.notification.all');
-            defaultMessage = 'All';
+            message = messages.notificationAll;
             break;
         }
         case NotificationLevel.MENTION: {
-            id = t('channel_info.notification.mention');
-            defaultMessage = 'Mentions';
+            message = messages.notificationMention;
             break;
         }
         case NotificationLevel.NONE: {
-            id = t('channel_info.notification.none');
-            defaultMessage = 'Never';
+            message = messages.notificationNone;
             break;
         }
         default:
-            id = t('channel_info.notification.default');
-            defaultMessage = 'Default';
+            message = messages.notificationDefault;
             break;
     }
 
-    return {id, defaultMessage};
+    return message;
 };
 
-const NotificationPreference = ({channelId, displayName, notifyLevel, userNotifyLevel}: Props) => {
+const NotificationPreference = ({
+    channelId,
+    displayName,
+    notifyLevel,
+    userNotifyLevel,
+    channelType,
+    hasGMasDMFeature,
+}: Props) => {
     const {formatMessage} = useIntl();
     const theme = useTheme();
     const title = formatMessage({id: 'channel_info.mobile_notifications', defaultMessage: 'Mobile Notifications'});
 
-    const goToChannelNotificationPreferences = preventDoubleTap(() => {
+    const goToChannelNotificationPreferences = usePreventDoubleTap(useCallback(() => {
         const options: Options = {
             topBar: {
                 title: {
@@ -71,16 +94,22 @@ const NotificationPreference = ({channelId, displayName, notifyLevel, userNotify
             },
         };
         goToScreen(Screens.CHANNEL_NOTIFICATION_PREFERENCES, title, {channelId}, options);
-    });
+    }, [channelId, displayName, theme.sidebarHeaderTextColor, title]));
 
     const notificationLevelToText = () => {
-        if (notifyLevel === NotificationLevel.DEFAULT) {
-            const userLevel = notificationLevel(userNotifyLevel);
-            return formatMessage(userLevel);
+        let notifyLevelToUse = notifyLevel;
+        if (notifyLevelToUse === NotificationLevel.DEFAULT) {
+            notifyLevelToUse = userNotifyLevel;
         }
 
-        const channelLevel = notificationLevel(notifyLevel);
-        return formatMessage(channelLevel);
+        if (hasGMasDMFeature) {
+            if (notifyLevel === NotificationLevel.DEFAULT && notifyLevelToUse === NotificationLevel.MENTION && isTypeDMorGM(channelType)) {
+                notifyLevelToUse = NotificationLevel.ALL;
+            }
+        }
+
+        const messageDescriptor = notificationLevel(notifyLevelToUse);
+        return formatMessage(messageDescriptor);
     };
 
     return (

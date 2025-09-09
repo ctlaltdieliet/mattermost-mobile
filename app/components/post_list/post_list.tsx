@@ -3,9 +3,10 @@
 
 import {FlatList} from '@stream-io/flat-list-mvcp';
 import React, {type ReactElement, useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {DeviceEventEmitter, type ListRenderItemInfo, type NativeScrollEvent, type NativeSyntheticEvent, Platform, type StyleProp, StyleSheet, type ViewStyle} from 'react-native';
-import Animated from 'react-native-reanimated';
+import {DeviceEventEmitter, type ListRenderItemInfo, Platform, type StyleProp, StyleSheet, type ViewStyle, type NativeSyntheticEvent, type NativeScrollEvent} from 'react-native';
+import Animated, {type AnimatedStyle} from 'react-native-reanimated';
 
+import {removePost} from '@actions/local/post';
 import {fetchPosts, fetchPostThread} from '@actions/remote/post';
 import CombinedUserActivity from '@components/post_list/combined_user_activity';
 import DateSeparator from '@components/post_list/date_separator';
@@ -13,21 +14,23 @@ import NewMessagesLine from '@components/post_list/new_message_line';
 import Post from '@components/post_list/post';
 import ThreadOverview from '@components/post_list/thread_overview';
 import {Events, Screens} from '@constants';
+import {PostTypes} from '@constants/post';
 import {useServerUrl} from '@context/server';
 import {useTheme} from '@context/theme';
 import {getDateForDateLine, preparePostList} from '@utils/post_list';
 
 import {INITIAL_BATCH_TO_RENDER, SCROLL_POSITION_CONFIG, VIEWABILITY_CONFIG} from './config';
 import MoreMessages from './more_messages';
-import PostListRefreshControl from './refresh_control';
+import ScrollToEndView from './scroll_to_end_view';
 
 import type {PostListItem, PostListOtherItem, ViewableItemsChanged, ViewableItemsChangedListenerEvent} from '@typings/components/post_list';
 import type PostModel from '@typings/database/models/servers/post';
+import type {AvailableScreens} from '@typings/screens/navigation';
 
 type Props = {
     appsEnabled: boolean;
     channelId: string;
-    contentContainerStyle?: StyleProp<ViewStyle>;
+    contentContainerStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
     currentTimezone: string | null;
     currentUserId: string;
     currentUsername: string;
@@ -37,9 +40,8 @@ type Props = {
     highlightPinnedOrSaved?: boolean;
     isCRTEnabled?: boolean;
     isPostAcknowledgementEnabled?: boolean;
-    isTimezoneEnabled: boolean;
     lastViewedAt: number;
-    location: string;
+    location: AvailableScreens;
     nativeID: string;
     onEndReached?: () => void;
     posts: PostModel[];
@@ -52,7 +54,6 @@ type Props = {
     header?: ReactElement;
     testID: string;
     currentCallBarVisible?: boolean;
-    joinCallBannerVisible?: boolean;
     savedPostIds: Set<string>;
 }
 
@@ -64,7 +65,9 @@ type ScrollIndexFailed = {
     averageItemLength: number;
 };
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
+const CONTENT_OFFSET_THRESHOLD = 160;
+const SCROLL_EVENT_THROTTLE = Platform.select({android: 17, default: 60});
+
 const keyExtractor = (item: PostListItem | PostListOtherItem) => (item.type === 'post' ? item.value.currentPost.id : item.value);
 
 const styles = StyleSheet.create({
@@ -73,14 +76,6 @@ const styles = StyleSheet.create({
     },
     container: {
         flex: 1,
-        scaleY: -1,
-    },
-    scale: {
-        ...Platform.select({
-            android: {
-                scaleY: -1,
-            },
-        }),
     },
 });
 
@@ -99,7 +94,6 @@ const PostList = ({
     highlightPinnedOrSaved = true,
     isCRTEnabled,
     isPostAcknowledgementEnabled,
-    isTimezoneEnabled,
     lastViewedAt,
     location,
     nativeID,
@@ -111,39 +105,46 @@ const PostList = ({
     showMoreMessages,
     showNewMessageLine = true,
     testID,
-    currentCallBarVisible,
-    joinCallBannerVisible,
     savedPostIds,
 }: Props) => {
+    const firstIdInPosts = posts[0]?.id;
+
     const listRef = useRef<FlatList<string | PostModel>>(null);
     const onScrollEndIndexListener = useRef<onScrollEndIndexListenerEvent>();
     const onViewableItemsChangedListener = useRef<ViewableItemsChangedListenerEvent>();
     const scrolledToHighlighted = useRef(false);
-    const [enableRefreshControl, setEnableRefreshControl] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [showScrollToEndBtn, setShowScrollToEndBtn] = useState(false);
+    const [lastPostId, setLastPostId] = useState<string | undefined>(firstIdInPosts);
     const theme = useTheme();
     const serverUrl = useServerUrl();
     const orderedPosts = useMemo(() => {
-        return preparePostList(posts, lastViewedAt, showNewMessageLine, currentUserId, currentUsername, shouldShowJoinLeaveMessages, isTimezoneEnabled, currentTimezone, location === Screens.THREAD, savedPostIds);
-    }, [posts, lastViewedAt, showNewMessageLine, currentTimezone, currentUsername, shouldShowJoinLeaveMessages, isTimezoneEnabled, location, savedPostIds]);
+        return preparePostList(posts, lastViewedAt, showNewMessageLine, currentUserId, currentUsername, shouldShowJoinLeaveMessages, currentTimezone, location === Screens.THREAD, savedPostIds);
+    }, [posts, lastViewedAt, showNewMessageLine, currentUserId, currentUsername, shouldShowJoinLeaveMessages, currentTimezone, location, savedPostIds]);
 
     const initialIndex = useMemo(() => {
         return orderedPosts.findIndex((i) => i.type === 'start-of-new-messages');
     }, [orderedPosts]);
 
+    const isNewMessage = lastPostId ? firstIdInPosts !== lastPostId : false;
+
+    const scrollToEnd = useCallback(() => {
+        listRef.current?.scrollToOffset({offset: 0, animated: true});
+    }, []);
+
     useEffect(() => {
         const t = setTimeout(() => {
-            listRef.current?.scrollToOffset({offset: 0, animated: true});
+            scrollToEnd();
         }, 300);
 
         return () => clearTimeout(t);
-    }, [channelId, rootId]);
+    }, [channelId, rootId, scrollToEnd]);
 
     useEffect(() => {
         const scrollToBottom = (screen: string) => {
             if (screen === location) {
                 const scrollToBottomTimer = setTimeout(() => {
-                    listRef.current?.scrollToOffset({offset: 0, animated: true});
+                    scrollToEnd();
                     clearTimeout(scrollToBottomTimer);
                 }, 400);
             }
@@ -154,9 +155,12 @@ const PostList = ({
         return () => {
             scrollBottomListener.remove();
         };
-    }, []);
+    }, [location, scrollToEnd]);
 
     const onRefresh = useCallback(async () => {
+        if (disablePullToRefresh) {
+            return;
+        }
         setRefreshing(true);
         if (location === Screens.CHANNEL && channelId) {
             await fetchPosts(serverUrl, channelId);
@@ -170,15 +174,34 @@ const PostList = ({
             }
             await fetchPostThread(serverUrl, rootId, options);
         }
+        const removalPromises = posts.
+            filter((post) => post.type === PostTypes.EPHEMERAL).
+            map((post) => removePost(serverUrl, post));
+        await Promise.all(removalPromises);
         setRefreshing(false);
-    }, [channelId, location, posts, rootId]);
+    }, [disablePullToRefresh, location, channelId, rootId, posts, serverUrl]);
+
+    const scrollToIndex = useCallback((index: number, animated = true, applyOffset = true) => {
+        listRef.current?.scrollToIndex({
+            animated,
+            index,
+            viewOffset: applyOffset ? Platform.select({ios: -45, default: 0}) : 0,
+            viewPosition: 1, // 0 is at bottom
+        });
+    }, []);
 
     const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-        if (Platform.OS === 'android') {
-            const {y} = event.nativeEvent.contentOffset;
-            setEnableRefreshControl(y === 0);
+        const {y} = event.nativeEvent.contentOffset;
+        const isThresholdReached = y > CONTENT_OFFSET_THRESHOLD;
+
+        if (isThresholdReached !== showScrollToEndBtn) {
+            setShowScrollToEndBtn(isThresholdReached);
         }
-    }, []);
+
+        if (!y && lastPostId !== firstIdInPosts) {
+            setLastPostId(firstIdInPosts);
+        }
+    }, [firstIdInPosts, lastPostId, showScrollToEndBtn]);
 
     const onScrollToIndexFailed = useCallback((info: ScrollIndexFailed) => {
         const index = Math.min(info.highestMeasuredFrameIndex, info.index);
@@ -189,7 +212,7 @@ const PostList = ({
             }
             scrollToIndex(index);
         }
-    }, [highlightedId]);
+    }, [highlightedId, scrollToIndex]);
 
     const onViewableItemsChanged = useCallback(({viewableItems}: ViewableItemsChanged) => {
         if (!viewableItems.length) {
@@ -236,7 +259,6 @@ const PostList = ({
                         key={item.value}
                         theme={theme}
                         testID={`${testID}.new_messages_line`}
-                        style={styles.scale}
                     />
                 );
             case 'date':
@@ -244,8 +266,7 @@ const PostList = ({
                     <DateSeparator
                         key={item.value}
                         date={getDateForDateLine(item.value)}
-                        style={styles.scale}
-                        timezone={isTimezoneEnabled ? currentTimezone : null}
+                        timezone={currentTimezone}
                     />
                 );
             case 'thread-overview':
@@ -254,22 +275,24 @@ const PostList = ({
                         key={item.value}
                         rootId={rootId!}
                         testID={`${testID}.thread_overview`}
-                        style={styles.scale}
                     />
                 );
             case 'user-activity': {
                 const postProps = {
                     currentUsername,
-                    key: item.value,
                     postId: item.value,
                     location,
-                    style: Platform.OS === 'ios' ? styles.scale : styles.container,
+                    style: styles.container,
                     testID: `${testID}.combined_user_activity`,
                     showJoinLeave: shouldShowJoinLeaveMessages,
                     theme,
                 };
 
-                return (<CombinedUserActivity {...postProps}/>);
+                return (
+                    <CombinedUserActivity
+                        {...postProps}
+                        key={item.value}
+                    />);
             }
             default: {
                 const post = item.value.currentPost;
@@ -283,7 +306,6 @@ const PostList = ({
                     highlight: highlightedId === post.id,
                     highlightPinnedOrSaved,
                     isSaved,
-                    key: post.id,
                     location,
                     nextPost,
                     post,
@@ -291,23 +313,18 @@ const PostList = ({
                     rootId,
                     shouldRenderReplyButton,
                     skipSaveddHeader,
-                    style: styles.scale,
                     testID: `${testID}.post`,
                 };
 
-                return (<Post {...postProps}/>);
+                return (
+                    <Post
+                        {...postProps}
+                        key={post.id}
+                    />
+                );
             }
         }
-    }, [appsEnabled, currentTimezone, customEmojiNames, highlightPinnedOrSaved, isCRTEnabled, isPostAcknowledgementEnabled, isTimezoneEnabled, shouldRenderReplyButton, theme]);
-
-    const scrollToIndex = useCallback((index: number, animated = true, applyOffset = true) => {
-        listRef.current?.scrollToIndex({
-            animated,
-            index,
-            viewOffset: applyOffset ? Platform.select({ios: -45, default: 0}) : 0,
-            viewPosition: 1, // 0 is at bottom
-        });
-    }, []);
+    }, [appsEnabled, currentTimezone, currentUsername, customEmojiNames, highlightPinnedOrSaved, highlightedId, isCRTEnabled, isPostAcknowledgementEnabled, location, rootId, shouldRenderReplyButton, shouldShowJoinLeaveMessages, testID, theme]);
 
     useEffect(() => {
         const t = setTimeout(() => {
@@ -331,38 +348,43 @@ const PostList = ({
 
     return (
         <>
-            <PostListRefreshControl
-                enabled={!disablePullToRefresh && enableRefreshControl}
+            <Animated.FlatList
+                contentContainerStyle={contentContainerStyle}
+                data={orderedPosts}
+                keyboardDismissMode='interactive'
+                keyboardShouldPersistTaps='handled'
+                keyExtractor={keyExtractor}
+                initialNumToRender={INITIAL_BATCH_TO_RENDER + 5}
+                ListHeaderComponent={header}
+                ListFooterComponent={footer}
+                maintainVisibleContentPosition={SCROLL_POSITION_CONFIG}
+                maxToRenderPerBatch={10}
+                nativeID={nativeID}
+                onEndReached={onEndReached}
+                onEndReachedThreshold={0.9}
+                onScroll={onScroll}
+                onScrollToIndexFailed={onScrollToIndexFailed}
+                onViewableItemsChanged={onViewableItemsChanged}
+                ref={listRef}
+                removeClippedSubviews={true}
+                renderItem={renderItem}
+                scrollEventThrottle={SCROLL_EVENT_THROTTLE}
+                style={styles.flex}
+                viewabilityConfig={VIEWABILITY_CONFIG}
+                testID={`${testID}.flat_list`}
+                inverted={true}
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                style={styles.container}
-            >
-                <AnimatedFlatList
-                    contentContainerStyle={contentContainerStyle}
-                    data={orderedPosts}
-                    keyboardDismissMode='interactive'
-                    keyboardShouldPersistTaps='handled'
-                    keyExtractor={keyExtractor}
-                    initialNumToRender={INITIAL_BATCH_TO_RENDER + 5}
-                    ListHeaderComponent={header}
-                    ListFooterComponent={footer}
-                    maintainVisibleContentPosition={SCROLL_POSITION_CONFIG}
-                    maxToRenderPerBatch={10}
-                    nativeID={nativeID}
-                    onEndReached={onEndReached}
-                    onEndReachedThreshold={0.9}
-                    onScroll={onScroll}
-                    onScrollToIndexFailed={onScrollToIndexFailed}
-                    onViewableItemsChanged={onViewableItemsChanged}
-                    ref={listRef}
-                    removeClippedSubviews={true}
-                    renderItem={renderItem}
-                    scrollEventThrottle={60}
-                    style={styles.flex}
-                    viewabilityConfig={VIEWABILITY_CONFIG}
-                    testID={`${testID}.flat_list`}
-                />
-            </PostListRefreshControl>
+            />
+            {location !== Screens.PERMALINK &&
+            <ScrollToEndView
+                onPress={scrollToEnd}
+                isNewMessage={isNewMessage}
+                showScrollToEndBtn={showScrollToEndBtn}
+                location={location}
+                testID={'scroll-to-end-view'}
+            />
+            }
             {showMoreMessages &&
             <MoreMessages
                 channelId={channelId}
@@ -375,8 +397,6 @@ const PostList = ({
                 scrollToIndex={scrollToIndex}
                 theme={theme}
                 testID={`${testID}.more_messages_button`}
-                currentCallBarVisible={Boolean(currentCallBarVisible)}
-                joinCallBannerVisible={Boolean(joinCallBannerVisible)}
             />
             }
         </>

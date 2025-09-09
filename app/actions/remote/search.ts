@@ -1,11 +1,13 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
+import {getPosts} from '@actions/local/post';
+import {General} from '@constants';
 import {SYSTEM_IDENTIFIERS} from '@constants/database';
 import DatabaseManager from '@database/manager';
 import NetworkManager from '@managers/network_manager';
 import {prepareMissingChannelsForAllTeams} from '@queries/servers/channel';
-import {getConfigValue} from '@queries/servers/system';
+import {getConfigValue, getCurrentTeamId} from '@queries/servers/system';
 import {getIsCRTEnabled, prepareThreadsFromReceivedPosts} from '@queries/servers/thread';
 import {getCurrentUser} from '@queries/servers/user';
 import {getFullErrorMessage} from '@utils/errors';
@@ -17,6 +19,8 @@ import {fetchPostAuthors, fetchMissingChannelsFromPosts} from './post';
 import {forceLogoutIfNecessary} from './session';
 
 import type Model from '@nozbe/watermelondb/Model';
+import type ChannelModel from '@typings/database/models/servers/channel';
+import type PostModel from '@typings/database/models/servers/post';
 
 export async function fetchRecentMentions(serverUrl: string): Promise<PostSearchRequest> {
     try {
@@ -127,18 +131,39 @@ export const searchPosts = async (serverUrl: string, teamId: string, params: Pos
     }
 };
 
-export const searchFiles = async (serverUrl: string, teamId: string, params: FileSearchParams): Promise<{files?: FileInfo[]; channels?: string[]; error?: unknown}> => {
+export const searchFiles = async (serverUrl: string, teamId: string, params: FileSearchParams, channel?: ChannelModel): Promise<{files?: FileInfo[]; channels?: string[]; error?: unknown}> => {
     try {
+        let currentTeamId = teamId;
+        if (channel && (channel.type === General.DM_CHANNEL || channel.type === General.GM_CHANNEL)) {
+            const {database} = DatabaseManager.getServerDatabaseAndOperator(serverUrl);
+            currentTeamId = await getCurrentTeamId(database);
+        }
         const client = NetworkManager.getClient(serverUrl);
-        const result = await client.searchFiles(teamId, params.terms);
+        const result = await client.searchFiles(currentTeamId, params.terms, false);
         const files = result?.file_infos ? Object.values(result.file_infos) : [];
-        const allChannelIds = files.reduce<string[]>((acc, f) => {
+        const [allChannelIds, allPostIds] = files.reduce<[Set<string>, Set<string>]>((acc, f) => {
             if (f.channel_id) {
-                acc.push(f.channel_id);
+                acc[0].add(f.channel_id);
+            }
+            if (f.post_id) {
+                acc[1].add(f.post_id);
             }
             return acc;
-        }, []);
-        const channels = [...new Set(allChannelIds)];
+        }, [new Set<string>(), new Set<string>()]);
+        const channels = Array.from(allChannelIds.values());
+
+        // Attach the file's post's props to the FileInfo (needed for captioning videos)
+        const postIds = Array.from(allPostIds);
+        const posts = await getPosts(serverUrl, postIds);
+        const idToPost = posts.reduce<Dictionary<PostModel>>((acc, p) => {
+            acc[p.id] = p;
+            return acc;
+        }, {});
+        files.forEach((f) => {
+            if (f.post_id) {
+                f.postProps = idToPost[f.post_id]?.props || {};
+            }
+        });
         return {files, channels};
     } catch (error) {
         logDebug('error on searchFiles', getFullErrorMessage(error));

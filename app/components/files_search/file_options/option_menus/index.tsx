@@ -1,11 +1,10 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
-import compose from 'lodash/fp/compose';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 
-import {observeConfigBooleanValue, observeCanDownloadFiles} from '@queries/servers/system';
+import {observeCanDownloadFiles, observeEnableSecureFilePreview} from '@queries/servers/security';
+import {observeConfigBooleanValue} from '@queries/servers/system';
 
 import OptionMenus from './option_menus';
 
@@ -15,10 +14,8 @@ const enhance = withObservables([], ({database}: WithDatabaseArgs) => {
     return {
         canDownloadFiles: observeCanDownloadFiles(database),
         enablePublicLink: observeConfigBooleanValue(database, 'EnablePublicLink'),
+        enableSecureFilePreview: observeEnableSecureFilePreview(database),
     };
 });
 
-export default compose(
-    withDatabase,
-    enhance,
-)(OptionMenus);
+export default withDatabase(enhance(OptionMenus));

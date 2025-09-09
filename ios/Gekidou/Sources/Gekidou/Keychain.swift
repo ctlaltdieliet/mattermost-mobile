@@ -7,6 +7,11 @@
 
 import Foundation
 
+public struct ServerCredentials {
+    public let token: String?
+    public let preauthSecret: String?
+}
+
 enum KeychainError: Error {
     case CertificateForIdentityNotFound
     case IdentityNotFound
@@ -27,7 +32,7 @@ extension KeychainError: LocalizedError {
         case .FailedSecItemCopyMatching(status: let status): return status
         }
     }
-    
+
     var errorDescription: String? {
         switch self {
         case .CertificateForIdentityNotFound:
@@ -48,8 +53,7 @@ extension KeychainError: LocalizedError {
 
 public class Keychain: NSObject {
     @objc public static let `default` = Keychain()
-    private var tokenCache = Dictionary<String, String>()
-    
+
     public func getClientIdentityAndCertificate(for host: String) throws -> (SecIdentity, SecCertificate)? {
         let query = try buildIdentityQuery(for: host)
 
@@ -62,7 +66,7 @@ public class Keychain: NSObject {
 
             throw KeychainError.FailedSecItemCopyMatching(identityStatus)
         }
-        
+
         let identity = result as! SecIdentity
         var certificate: SecCertificate?
         let certificateStatus = SecIdentityCopyCertificate(identity, &certificate)
@@ -72,44 +76,63 @@ public class Keychain: NSObject {
         guard certificate != nil else {
             throw KeychainError.CertificateForIdentityNotFound
         }
-        
+
         return (identity, certificate!)
     }
-    
-    @objc public func getTokenObjc(for serverUrl: String) -> String? {
-        return try? getToken(for: serverUrl)
-    }
-    
-    public func getToken(for serverUrl: String) throws -> String? {
-        if let cache = tokenCache[serverUrl] {
-            return cache
-        }
 
+    @objc public func getCredentialsObjc(for serverUrl: String) -> NSDictionary? {
+        guard let credentials = try? getCredentials(for: serverUrl) else { return nil }
+        return [
+            "token": credentials.token as Any,
+            "preauthSecret": credentials.preauthSecret as Any
+        ]
+    }
+
+    public func getCredentials(for serverUrl: String) throws -> ServerCredentials? {
+        // Get main token from serverUrl key
+        let token = try getMainToken(for: serverUrl)
+        let preauthSecret = try? getPreauthSecret(for: serverUrl)
+
+        return ServerCredentials(token: token, preauthSecret: preauthSecret)
+    }
+
+    private func getMainToken(for serverUrl: String) throws -> String? {
         var attributes = try buildTokenAttributes(for: serverUrl)
         attributes[kSecMatchLimit] = kSecMatchLimitOne
         attributes[kSecReturnData] = kCFBooleanTrue
-        
+
         var result: AnyObject?
         let status = SecItemCopyMatching(attributes as CFDictionary, &result)
         let data = result as? Data
         if status == errSecSuccess && data != nil {
             let token = String(data: data!, encoding: .utf8)
-            tokenCache[serverUrl] = token
             return token
         }
-        
+
         return nil
     }
 
-    public func invalidateToken(for serverUrl: String) {
-        tokenCache.removeValue(forKey: serverUrl)
+    private func getPreauthSecret(for serverUrl: String) throws -> String? {
+        var attributes = try buildGenericPasswordAttributes(for: serverUrl, account: "preshared_secret")
+        attributes[kSecMatchLimit] = kSecMatchLimitOne
+        attributes[kSecReturnData] = kCFBooleanTrue
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(attributes as CFDictionary, &result)
+        let data = result as? Data
+        if status == errSecSuccess && data != nil {
+            let preauthSecret = String(data: data!, encoding: .utf8)
+            return preauthSecret
+        }
+
+        return nil
     }
-    
+
     private func buildIdentityQuery(for host: String) throws -> [CFString: Any] {
         guard let hostData = host.data(using: .utf8) else {
             throw KeychainError.InvalidHost(host)
         }
-        
+
         let query: [CFString:Any] = [
             kSecClass: kSecClassIdentity,
             kSecAttrLabel: hostData,
@@ -118,12 +141,12 @@ public class Keychain: NSObject {
 
         return query
     }
-    
+
     private func buildTokenAttributes(for serverUrl: String) throws -> [CFString: Any] {
         guard let serverUrlData = serverUrl.data(using: .utf8) else {
             throw KeychainError.InvalidServerUrl(serverUrl)
         }
-        
+
         var attributes: [CFString: Any] = [
             kSecClass: kSecClassInternetPassword,
             kSecAttrServer: serverUrlData
@@ -132,7 +155,29 @@ public class Keychain: NSObject {
         if let accessGroup = Bundle.main.object(forInfoDictionaryKey: "AppGroupIdentifier") as! String? {
             attributes[kSecAttrAccessGroup] = accessGroup
         }
-        
+
+        return attributes
+    }
+
+    private func buildGenericPasswordAttributes(for service: String, account: String) throws -> [CFString: Any] {
+        guard let serviceData = service.data(using: .utf8) else {
+            throw KeychainError.InvalidServerUrl(service)
+        }
+
+        guard let accountData = account.data(using: .utf8) else {
+            throw KeychainError.InvalidServerUrl(account)
+        }
+
+        var attributes: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: serviceData,
+            kSecAttrAccount: accountData
+        ]
+
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: "AppGroupIdentifier") as! String? {
+            attributes[kSecAttrAccessGroup] = accessGroup
+        }
+
         return attributes
     }
 }

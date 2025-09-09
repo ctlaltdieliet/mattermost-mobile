@@ -2,13 +2,12 @@
 // See LICENSE.txt for license information.
 
 import React from 'react';
-import {useIntl} from 'react-intl';
+import {defineMessages, useIntl} from 'react-intl';
 
 import SettingBlock from '@components/settings/block';
 import SettingOption from '@components/settings/option';
 import SettingSeparator from '@components/settings/separator';
 import {NotificationLevel} from '@constants';
-import {t} from '@i18n';
 
 type Props = {
     isSelected: boolean;
@@ -22,12 +21,21 @@ type NotifPrefOptions = {
     testID: string;
     value: string;
 }
+const messages = defineMessages({
+    threadReplies: {
+        id: 'channel_notification_preferences.thread_replies',
+        defaultMessage: 'Thread replies',
+    },
+    threadRepliesDescription: {
+        id: 'channel_notification_preferences.notification.thread_replies',
+        defaultMessage: 'Notify me about replies to threads I’m following in this channel',
+    },
+});
 
-const THREAD_REPLIES = {id: t('channel_notification_preferences.thread_replies'), defaultMessage: 'Thread replies'};
+const THREAD_REPLIES = messages.threadReplies;
 const NOTIFY_OPTIONS_THREAD: Record<string, NotifPrefOptions> = {
     THREAD_REPLIES: {
-        defaultMessage: 'Notify me about replies to threads I’m following in this channel',
-        id: t('channel_notification_preferences.notification.thread_replies'),
+        ...messages.threadRepliesDescription,
         testID: 'channel_notification_preferences.notification.thread_replies',
         value: 'thread_replies',
     },
@@ -36,7 +44,8 @@ const NOTIFY_OPTIONS_THREAD: Record<string, NotifPrefOptions> = {
 const NotifyAbout = ({isSelected, notifyLevel, onPress}: Props) => {
     const {formatMessage} = useIntl();
 
-    if ([NotificationLevel.NONE, NotificationLevel.ALL].includes(notifyLevel)) {
+    const hiddenStates: NotificationLevel[] = [NotificationLevel.NONE, NotificationLevel.ALL];
+    if (hiddenStates.includes(notifyLevel)) {
         return null;
     }
 

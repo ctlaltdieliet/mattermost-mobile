@@ -1,17 +1,13 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
-// See LICENSE.txt for license information.
-
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 import {of as of$} from 'rxjs';
 import {combineLatestWith, switchMap} from 'rxjs/operators';
 
-import {General} from '@constants';
 import {observeChannel} from '@queries/servers/channel';
 import {observeCurrentUser} from '@queries/servers/user';
+import {isDefaultChannel} from '@utils/channel';
 
 import LeaveChannelLabel from './leave_channel_label';
 
@@ -27,8 +23,8 @@ const enhanced = withObservables(['channelId'], ({channelId, database}: OwnProps
     const canLeave = channel.pipe(
         combineLatestWith(currentUser),
         switchMap(([ch, u]) => {
-            const isDefaultChannel = ch?.name === General.DEFAULT_CHANNEL;
-            return of$(!isDefaultChannel || (isDefaultChannel && u?.isGuest));
+            const isDC = isDefaultChannel(ch);
+            return of$(!isDC || (isDC && u?.isGuest));
         }),
     );
 

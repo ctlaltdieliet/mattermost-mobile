@@ -1,12 +1,15 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useCallback, useMemo, useRef, useState} from 'react';
-import {NativeModules, useWindowDimensions, Platform} from 'react-native';
+import RNUtils from '@mattermost/rnutils';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {DeviceEventEmitter, Platform, StyleSheet, View} from 'react-native';
 
+import {Events} from '@constants';
 import useAndroidHardwareBackHandler from '@hooks/android_back_handler';
-import {useIsTablet} from '@hooks/device';
+import {useIsTablet, useWindowDimensions} from '@hooks/device';
 import {useGalleryControls} from '@hooks/gallery';
+import SecurityManager from '@managers/security_manager';
 import {dismissOverlay, setScreensOrientation} from '@screens/navigation';
 import {freezeOtherScreens} from '@utils/gallery';
 
@@ -25,13 +28,26 @@ type Props = {
     items: GalleryItemType[];
 }
 
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+});
+
 const GalleryScreen = ({componentId, galleryIdentifier, hideActions, initialIndex, items}: Props) => {
     const dim = useWindowDimensions();
     const isTablet = useIsTablet();
     const [localIndex, setLocalIndex] = useState(initialIndex);
-    const {setControlsHidden, headerStyles, footerStyles} = useGalleryControls();
-    const dimensions = useMemo(() => ({width: dim.width, height: dim.height}), [dim.width]);
+    const {headerAndFooterHidden, hideHeaderAndFooter, headerStyles, footerStyles} = useGalleryControls();
     const galleryRef = useRef<GalleryRef>(null);
+
+    const containerStyle = useMemo(() => {
+        if (Platform.OS === 'ios') {
+            return dim;
+        }
+
+        return styles.container;
+    }, [dim]);
 
     const onClose = useCallback(() => {
         // We keep the un freeze here as we want
@@ -48,22 +64,35 @@ const GalleryScreen = ({componentId, galleryIdentifier, hideActions, initialInde
         setScreensOrientation(isTablet);
         if (Platform.OS === 'ios' && !isTablet) {
             // We need both the navigation & the module
-            NativeModules.SplitView.lockPortrait();
+            RNUtils.lockPortrait();
         }
         freezeOtherScreens(false);
         requestAnimationFrame(async () => {
             dismissOverlay(componentId);
         });
-    }, [isTablet]);
+    }, [componentId, isTablet]);
 
     const onIndexChange = useCallback((index: number) => {
         setLocalIndex(index);
     }, []);
 
+    useEffect(() => {
+        const listener = DeviceEventEmitter.addListener(Events.CLOSE_GALLERY, () => {
+            onClose();
+        });
+
+        return () => {
+            listener.remove();
+        };
+    }, [onClose]);
+
     useAndroidHardwareBackHandler(componentId, close);
 
     return (
-        <>
+        <View
+            style={containerStyle}
+            nativeID={SecurityManager.getShieldScreenId(componentId)}
+        >
             <Header
                 index={localIndex}
                 onClose={onClose}
@@ -71,21 +100,22 @@ const GalleryScreen = ({componentId, galleryIdentifier, hideActions, initialInde
                 total={items.length}
             />
             <Gallery
+                headerAndFooterHidden={headerAndFooterHidden}
                 galleryIdentifier={galleryIdentifier}
                 initialIndex={initialIndex}
                 items={items}
                 onHide={close}
                 onIndexChange={onIndexChange}
-                onShouldHideControls={setControlsHidden}
+                hideHeaderAndFooter={hideHeaderAndFooter}
                 ref={galleryRef}
-                targetDimensions={dimensions}
+                targetDimensions={dim}
             />
             <Footer
                 hideActions={hideActions}
                 item={items[localIndex]}
                 style={footerStyles}
             />
-        </>
+        </View>
     );
 };
 

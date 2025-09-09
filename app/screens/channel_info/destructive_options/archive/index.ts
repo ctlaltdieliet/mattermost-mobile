@@ -1,8 +1,7 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 import {of as of$} from 'rxjs';
 import {combineLatestWith, switchMap} from 'rxjs/operators';
 
@@ -12,6 +11,7 @@ import {observePermissionForChannel, observePermissionForTeam} from '@queries/se
 import {observeConfigBooleanValue} from '@queries/servers/system';
 import {observeCurrentTeam} from '@queries/servers/team';
 import {observeCurrentUser} from '@queries/servers/user';
+import {isDefaultChannel} from '@utils/channel';
 
 import Archive from './archive';
 
@@ -31,8 +31,8 @@ const enhanced = withObservables(['channelId', 'type'], ({channelId, database, t
     const canLeave = channel.pipe(
         combineLatestWith(currentUser),
         switchMap(([ch, u]) => {
-            const isDefaultChannel = ch?.name === General.DEFAULT_CHANNEL;
-            return of$(!isDefaultChannel || (isDefaultChannel && u?.isGuest));
+            const isDC = isDefaultChannel(ch);
+            return of$(!isDC || (isDC && u?.isGuest));
         }),
     );
 

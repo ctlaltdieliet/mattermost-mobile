@@ -1,14 +1,14 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useEffect, useLayoutEffect} from 'react';
-import Animated, {makeMutable, runOnUI} from 'react-native-reanimated';
+import {useEffect, useLayoutEffect} from 'react';
+import {makeMutable, runOnUI, type AnimatedRef, type SharedValue} from 'react-native-reanimated';
 
 import type {GalleryManagerSharedValues} from '@typings/screens/gallery';
 
 export interface GalleryManagerItem {
     index: number;
-    ref: React.RefObject<unknown>;
+    ref: AnimatedRef<any>;
 }
 
 export interface GalleryManagerItems {
@@ -24,7 +24,7 @@ class Gallery {
     private init = false;
     private timeout: NodeJS.Timeout | null = null;
 
-    public refsByIndexSV: Animated.SharedValue<GalleryManagerItems> = makeMutable({});
+    public refsByIndexSV: SharedValue<GalleryManagerItems> = makeMutable({});
 
     public sharedValues: GalleryManagerSharedValues = {
         width: makeMutable(0),
@@ -35,6 +35,7 @@ class Gallery {
         activeIndex: makeMutable(0),
         targetWidth: makeMutable(0),
         targetHeight: makeMutable(0),
+        scale: makeMutable(1),
     };
 
     public items = new Map<number, GalleryManagerItem>();
@@ -79,7 +80,7 @@ class Gallery {
         })();
     }
 
-    public registerItem(index: number, ref: React.RefObject<unknown>) {
+    public registerItem(index: number, ref: AnimatedRef<any>) {
         if (this.items.has(index)) {
             return;
         }

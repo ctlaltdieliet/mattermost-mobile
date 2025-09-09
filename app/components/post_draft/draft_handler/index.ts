@@ -1,12 +1,12 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {withDatabase} from '@nozbe/watermelondb/DatabaseProvider';
-import withObservables from '@nozbe/with-observables';
+import {withDatabase, withObservables} from '@nozbe/watermelondb/react';
 import React from 'react';
 
 import {DEFAULT_SERVER_MAX_FILE_SIZE} from '@constants/post_draft';
-import {observeCanUploadFiles, observeConfigIntValue, observeMaxFileCount} from '@queries/servers/system';
+import {observeCanUploadFiles} from '@queries/servers/security';
+import {observeConfigIntValue, observeMaxFileCount} from '@queries/servers/system';
 
 import DraftHandler from './draft_handler';
 

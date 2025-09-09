@@ -3,6 +3,7 @@
 
 import type ChannelModel from './channel';
 import type ChannelMembershipModel from './channel_membership';
+import type CustomProfileAttributeModel from './custom_profile_attribute';
 import type PostModel from './post';
 import type PreferenceModel from './preference';
 import type ReactionModel from './reaction';
@@ -11,7 +12,7 @@ import type ThreadParticipantsModel from './thread_participant';
 import type {Model} from '@nozbe/watermelondb';
 import type {Associations} from '@nozbe/watermelondb/Model';
 import type Query from '@nozbe/watermelondb/Query';
-import type {UserMentionKey} from '@typings/global/markdown';
+import type {HighlightWithoutNotificationKey, UserMentionKey} from '@typings/global/markdown';
 
 /**
  * The User model represents the 'USER' table and its relationship to other
@@ -113,11 +114,17 @@ declare class UserModel extends Model {
     /* user mentions keys always excluding @channel, @all, @here */
     userMentionKeys: UserMentionKey[];
 
+    /* user highlight keys are custom words that gets highlighted without notification */
+    highlightKeys: HighlightWithoutNotificationKey[];
+
     /** termsOfServiceId : The id of the last accepted terms of service */
     termsOfServiceId: string;
 
     /** termsOfServiceCreateAt : The last time the user accepted the terms of service */
     termsOfServiceCreateAt: number;
+
+    /** customProfileAttributes : All the custom profile attributes for this user */
+    customProfileAttributes: Query<CustomProfileAttributeModel> | undefined;
 }
 
 export default UserModel;

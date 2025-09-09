@@ -1,11 +1,12 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
+import {defineMessages} from 'react-intl';
 import {DeviceEventEmitter} from 'react-native';
 
 import {ActionType, General, Navigation, Screens} from '@constants';
 import DatabaseManager from '@database/manager';
-import {getTranslations, t} from '@i18n';
+import {getTranslations} from '@i18n';
 import {getChannelById} from '@queries/servers/channel';
 import {getPostById} from '@queries/servers/post';
 import {getCurrentTeamId, getCurrentUserId, prepareCommonSystemValues, type PrepareCommonSystemValuesArgs, setCurrentTeamAndChannelId} from '@queries/servers/system';
@@ -43,7 +44,7 @@ export const switchToGlobalThreads = async (serverUrl: string, teamId?: string, 
             await operator.batchRecords(models, 'switchToGlobalThreads');
         }
 
-        const isTabletDevice = await isTablet();
+        const isTabletDevice = isTablet();
         if (isTabletDevice) {
             DeviceEventEmitter.emit(Navigation.NAVIGATION_HOME, Screens.GLOBAL_THREADS);
         } else {
@@ -56,6 +57,17 @@ export const switchToGlobalThreads = async (serverUrl: string, teamId?: string, 
         return {error};
     }
 };
+
+const threadMessages = defineMessages({
+    thread: {
+        id: 'thread.header.thread',
+        defaultMessage: 'Thread',
+    },
+    threadIn: {
+        id: 'thread.header.thread_in',
+        defaultMessage: 'in {channelName}',
+    },
+});
 
 export const switchToThread = async (serverUrl: string, rootId: string, isFromNotification = false) => {
     try {
@@ -75,7 +87,7 @@ export const switchToThread = async (serverUrl: string, rootId: string, isFromNo
         }
 
         const currentTeamId = await getCurrentTeamId(database);
-        const isTabletDevice = await isTablet();
+        const isTabletDevice = isTablet();
         const teamId = channel.teamId || currentTeamId;
         const currentThreadId = EphemeralStore.getCurrentThreadId();
 
@@ -94,14 +106,7 @@ export const switchToThread = async (serverUrl: string, rootId: string, isFromNo
             }
         }
 
-        if (currentTeamId === teamId) {
-            const models = await prepareCommonSystemValues(operator, {
-                currentChannelId: channel.id,
-            });
-            if (models.length) {
-                await operator.batchRecords(models, 'switchToThread');
-            }
-        } else {
+        if (currentTeamId !== teamId) {
             const modelPromises: Array<Promise<Model[]>> = [];
             modelPromises.push(addTeamToTeamHistory(operator, teamId, true));
             const commonValues: PrepareCommonSystemValuesArgs = {
@@ -119,14 +124,14 @@ export const switchToThread = async (serverUrl: string, rootId: string, isFromNo
         const translations = getTranslations(user.locale);
 
         // Get title translation or default title message
-        const title = translations[t('thread.header.thread')] || 'Thread';
+        const title = translations[threadMessages.thread.id] || 'Thread';
 
         let subtitle = '';
         if (channel?.type === General.DM_CHANNEL) {
             subtitle = channel.displayName;
         } else {
             // Get translation or default message
-            subtitle = translations[t('thread.header.thread_in')] || 'in {channelName}';
+            subtitle = translations[threadMessages.threadIn.id] || 'in {channelName}';
             subtitle = subtitle.replace('{channelName}', channel.displayName);
         }
 
@@ -256,7 +261,7 @@ export async function processReceivedThreads(serverUrl: string, threads: Thread[
 export async function markTeamThreadsAsRead(serverUrl: string, teamId: string, prepareRecordsOnly = false) {
     try {
         const {database, operator} = DatabaseManager.getServerDatabaseAndOperator(serverUrl);
-        const threads = await queryThreadsInTeam(database, teamId, true, true, true).fetch();
+        const threads = await queryThreadsInTeam(database, teamId, {onlyUnreads: true, hasReplies: true, isFollowing: true}).fetch();
         const models = threads.map((thread) => thread.prepareUpdate((record) => {
             record.unreadMentions = 0;
             record.unreadReplies = 0;

@@ -2,12 +2,13 @@
 // See LICENSE.txt for license information.
 
 import React, {useEffect, useMemo} from 'react';
-import {Text, View} from 'react-native';
+import {defineMessages} from 'react-intl';
+import {Text, View, type TextStyle} from 'react-native';
 
 import {fetchProfilesInChannel} from '@actions/remote/user';
 import FormattedText from '@components/formatted_text';
 import {BotTag} from '@components/tag';
-import {General} from '@constants';
+import {General, NotificationLevel} from '@constants';
 import {useServerUrl} from '@context/server';
 import {makeStyleSheetFromTheme} from '@utils/theme';
 import {typography} from '@utils/typography';
@@ -27,16 +28,16 @@ type Props = {
     isBot: boolean;
     members?: ChannelMembershipModel[];
     theme: Theme;
+    hasGMasDMFeature: boolean;
+    channelNotifyProps?: Partial<ChannelNotifyProps>;
+    userNotifyProps?: Partial<UserNotifyProps> | null;
 }
 
 const getStyleSheet = makeStyleSheetFromTheme((theme: Theme) => ({
-    botContainer: {
-        alignSelf: 'flex-end',
-        bottom: 7.5,
-        height: 20,
-        marginBottom: 0,
-        marginLeft: 4,
-        paddingVertical: 0,
+    displayNameContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     botText: {
         fontSize: 14,
@@ -51,6 +52,9 @@ const getStyleSheet = makeStyleSheetFromTheme((theme: Theme) => ({
         marginTop: 8,
         textAlign: 'center',
         ...typography('Body', 200, 'Regular'),
+    },
+    boldText: {
+        ...typography('Body', 200, 'SemiBold'),
     },
     profilesContainer: {
         justifyContent: 'center',
@@ -67,7 +71,56 @@ const getStyleSheet = makeStyleSheetFromTheme((theme: Theme) => ({
     },
 }));
 
-const DirectChannel = ({channel, currentUserId, isBot, members, theme}: Props) => {
+const gmIntroMessages = defineMessages({
+    muted: {id: 'intro.group_message.muted', defaultMessage: 'This group message is currently <b>muted</b>, so you will not be notified.'},
+    [NotificationLevel.ALL]: {id: 'intro.group_message.all', defaultMessage: 'You\'ll be notified <b>for all activity</b> in this group message.'},
+    [NotificationLevel.DEFAULT]: {id: 'intro.group_message.all', defaultMessage: 'You\'ll be notified <b>for all activity</b> in this group message.'},
+    [NotificationLevel.MENTION]: {id: 'intro.group_message.mention', defaultMessage: 'You have selected to be notified <b>only when mentioned</b> in this group message.'},
+    [NotificationLevel.NONE]: {id: 'intro.group_message.none', defaultMessage: 'You have selected to <b>never</b> be notified in this group message.'},
+});
+
+const getGMIntroMessageSpecificPart = (userNotifyProps: Partial<UserNotifyProps> | undefined | null, channelNotifyProps: Partial<ChannelNotifyProps> | undefined, boldStyle: TextStyle) => {
+    const isMuted = channelNotifyProps?.mark_unread === 'mention';
+    if (isMuted) {
+        return (
+            <FormattedText
+                {...gmIntroMessages.muted}
+                values={{
+                    b: (chunk: string) => <Text style={boldStyle}>{chunk}</Text>,
+                }}
+            />
+        );
+    }
+    const channelNotifyProp = channelNotifyProps?.push || NotificationLevel.DEFAULT;
+    const userNotifyProp = userNotifyProps?.push || NotificationLevel.MENTION;
+    let notifyLevelToUse = channelNotifyProp;
+    if (notifyLevelToUse === NotificationLevel.DEFAULT) {
+        notifyLevelToUse = userNotifyProp;
+    }
+    if (channelNotifyProp === NotificationLevel.DEFAULT && userNotifyProp === NotificationLevel.MENTION) {
+        notifyLevelToUse = NotificationLevel.ALL;
+    }
+
+    return (
+        <FormattedText
+            {...gmIntroMessages[notifyLevelToUse]}
+            values={{
+                b: (chunk: string) => <Text style={boldStyle}>{chunk}</Text>,
+            }}
+        />
+    );
+};
+
+const DirectChannel = ({
+    channel,
+    currentUserId,
+    isBot,
+    members,
+    theme,
+    hasGMasDMFeature,
+    channelNotifyProps,
+    userNotifyProps,
+}: Props) => {
     const serverUrl = useServerUrl();
     const styles = getStyleSheet(theme);
 
@@ -89,14 +142,26 @@ const DirectChannel = ({channel, currentUserId, isBot, members, theme}: Props) =
                 />
             );
         }
+        if (!hasGMasDMFeature) {
+            return (
+                <FormattedText
+                    defaultMessage={'This is the start of your conversation with this group. Messages and files shared here are not shown to anyone else outside of the group.'}
+                    id='intro.group_message.after_gm_as_dm'
+                    style={styles.message}
+                />
+            );
+        }
         return (
-            <FormattedText
-                defaultMessage={'This is the start of your conversation with this group. Messages and files shared here are not shown to anyone else outside of the group.'}
-                id='intro.group_message'
-                style={styles.message}
-            />
+            <Text style={styles.message}>
+                <FormattedText
+                    defaultMessage={'This is the start of your conversation with this group.'}
+                    id='intro.group_message.common'
+                />
+                <Text> </Text>
+                {getGMIntroMessageSpecificPart(userNotifyProps, channelNotifyProps, styles.boldText)}
+            </Text>
         );
-    }, [channel.displayName, theme]);
+    }, [channel.type, channel.displayName, hasGMasDMFeature, styles.message, styles.boldText, userNotifyProps, channelNotifyProps]);
 
     const profiles = useMemo(() => {
         if (channel.type === General.DM_CHANNEL) {
@@ -127,14 +192,14 @@ const DirectChannel = ({channel, currentUserId, isBot, members, theme}: Props) =
                 userIds={channelMembers.map((cm) => cm.userId)}
             />
         );
-    }, [members, theme]);
+    }, [channel.id, channel.name, channel.type, currentUserId, members, theme]);
 
     return (
         <View style={styles.container}>
             <View style={styles.profilesContainer}>
                 {profiles}
             </View>
-            <View style={{flexDirection: 'row'}}>
+            <View style={styles.displayNameContainer}>
                 <Text
                     style={[styles.title, channel.type === General.GM_CHANNEL ? styles.titleGroup : undefined]}
                     testID='channel_post_list.intro.display_name'
@@ -142,10 +207,7 @@ const DirectChannel = ({channel, currentUserId, isBot, members, theme}: Props) =
                     {channel.displayName}
                 </Text>
                 {isBot &&
-                <BotTag
-                    style={styles.botContainer}
-                    textStyle={styles.botText}
-                />
+                    <BotTag size={'m'}/>
                 }
             </View>
             {message}
